@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Scatter } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Scatter } from 'recharts'; // Re-importado Tooltip
 
 // Componentes UI de shadcn/ui (implementación simplificada para este ejemplo)
 const Input = ({ type = 'text', value, onChange, placeholder, className = '' }) => (
@@ -106,7 +106,8 @@ const parseEquation = (eq) => {
 // Componente de punto personalizado para el equilibrio
 const CustomEquilibriumDot = (props) => {
   const { cx, cy, payload } = props;
-  
+  const [showDetails, setShowDetails] = useState(false); // Estado para controlar la visibilidad del tooltip
+
   // Solo renderizar el punto si el payload tiene la propiedad isEquilibriumPoint
   if (payload.isEquilibriumPoint) {
     const label = payload.label;
@@ -114,12 +115,34 @@ const CustomEquilibriumDot = (props) => {
     const textColor = payload.textColor || '#333'; // Color del texto
     const r = payload.dotRadius || 4; // Radio del punto
 
+    const handleClick = () => {
+      setShowDetails(!showDetails); // Alternar la visibilidad del tooltip al hacer clic
+    };
+
     return (
-      <g>
+      <g onClick={handleClick} style={{ cursor: 'pointer' }}>
         <circle cx={cx} cy={cy} r={r} fill={color} stroke="white" strokeWidth={1.5} />
         <text x={cx + 8} y={cy - 8} fill={textColor} fontSize={12} fontWeight="bold">
           {label}
         </text>
+        {showDetails && (
+          // Usamos foreignObject para renderizar HTML/CSS dentro de SVG
+          <foreignObject x={cx + 15} y={cy - 30} width={100} height={50}>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.9)',
+              border: '1px solid #ccc',
+              padding: '5px',
+              borderRadius: '5px',
+              fontSize: '10px',
+              color: '#333',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+            }}>
+              P: {payload.price.toFixed(2)}<br/>
+              Q: {payload.quantity.toFixed(2)}
+            </div>
+          </foreignObject>
+        )}
       </g>
     );
   }
@@ -144,6 +167,9 @@ const App = () => {
   const [explanation, setExplanation] = useState('');
   const [loadingExplanation, setLoadingExplanation] = useState(false);
   const [equilibriumDots, setEquilibriumDots] = useState([]); // Nuevo estado para los puntos de equilibrio de la gráfica
+  const [xAxisDomain, setXAxisDomain] = useState([0, 'auto']); // Dominio del eje X
+  const [yAxisDomain, setYAxisDomain] = useState([0, 'auto']); // Dominio del eje Y
+
 
   // Pequeña tolerancia para comparar números flotantes
   const EPSILON = 0.01; // Ajusta este valor si necesitas más o menos precisión
@@ -191,7 +217,8 @@ const App = () => {
         const p_calc = (bD - bS) / (aS - aD);
         const q_calc = aD * p_calc + bD;
 
-        if (!isNaN(p_calc) && !isNaN(q_calc) && q_calc >= 0 && p_calc >= 0) {
+        // Validar que los resultados sean números finitos y no negativos
+        if (isFinite(p_calc) && isFinite(q_calc) && q_calc >= 0 && p_calc >= 0) {
           localPEInitial = p_calc;
           localQEInitial = q_calc;
         }
@@ -204,7 +231,8 @@ const App = () => {
         const p_shifted_calc = (bD_shifted - bS_shifted) / (aS - aD);
         const q_shifted_calc = aD * p_shifted_calc + bD_shifted;
 
-        if (!isNaN(p_shifted_calc) && !isNaN(q_shifted_calc) && q_shifted_calc >= 0 && p_shifted_calc >= 0) {
+        // Validar que los resultados sean números finitos y no negativos
+        if (isFinite(p_shifted_calc) && isFinite(q_shifted_calc) && q_shifted_calc >= 0 && p_shifted_calc >= 0) {
           localPEShifted = p_shifted_calc;
           localQEShifted = q_shifted_calc;
         }
@@ -234,22 +262,21 @@ const App = () => {
     // --- Generar datos para la gráfica y la tabla (Cantidad en X, Precio en Y) ---
     let maxQuantityValue = 0;
     let minQuantityValue = 0; // La cantidad siempre empieza en 0
+    let maxPriceValue = 0; 
+    let minPriceValue = Infinity; // Inicializar con Infinity para encontrar el mínimo real
 
-    // Considerar las cantidades de equilibrio para el rango máximo
-    if (localQEInitial !== null) maxQuantityValue = Math.max(maxQuantityValue, localQEInitial * 1.5);
-    if (localQEShifted !== null) maxQuantityValue = Math.max(maxQuantityValue, localQEShifted * 1.5);
+    // Considerar las cantidades de equilibrio para el rango del eje X
+    if (localQEInitial !== null) maxQuantityValue = Math.max(maxQuantityValue, localQEInitial);
+    if (localQEShifted !== null) maxQuantityValue = Math.max(maxQuantityValue, localQEShifted);
 
     // Considerar los interceptos de cantidad (Q cuando P=0)
-    // Para demanda (Qd = aD*P + bD), si aD < 0 (pendiente negativa), Qd cuando P=0 es bD
-    if (parsedDemand.slope < 0 && parsedDemand.intercept > 0) maxQuantityValue = Math.max(maxQuantityValue, parsedDemand.intercept * 1.1);
-    // Para oferta (Qs = aS*P + bS), si aS > 0 (pendiente positiva), Qs cuando P=0 es bS
-    if (parsedSupply.slope > 0 && parsedSupply.intercept > 0) maxQuantityValue = Math.max(maxQuantityValue, parsedSupply.intercept * 1.1);
-    // Considerar los interceptos de cantidad para las curvas desplazadas
-    if (parsedDemand.slope < 0 && (parsedDemand.intercept + currentDemandShift) > 0) maxQuantityValue = Math.max(maxQuantityValue, (parsedDemand.intercept + currentDemandShift) * 1.1);
-    if (parsedSupply.slope > 0 && (parsedSupply.intercept + currentSupplyShift) > 0) maxQuantityValue = Math.max(maxQuantityValue, (parsedSupply.intercept + currentSupplyShift) * 1.1);
-
-    // Asegurar un rango mínimo de cantidad, pero más ajustado que 100
-    maxQuantityValue = Math.max(maxQuantityValue, 20); // Valor mínimo más razonable
+    if (parsedDemand.slope < 0 && parsedDemand.intercept > 0) maxQuantityValue = Math.max(maxQuantityValue, parsedDemand.intercept);
+    if (parsedSupply.slope > 0 && parsedSupply.intercept > 0) maxQuantityValue = Math.max(maxQuantityValue, parsedSupply.intercept);
+    if (parsedDemand.slope < 0 && (parsedDemand.intercept + currentDemandShift) > 0) maxQuantityValue = Math.max(maxQuantityValue, (parsedDemand.intercept + currentDemandShift));
+    if (parsedSupply.slope > 0 && (parsedSupply.intercept + currentSupplyShift) > 0) maxQuantityValue = Math.max(maxQuantityValue, (parsedSupply.intercept + currentSupplyShift));
+    
+    // Asegurar un rango mínimo de cantidad
+    maxQuantityValue = Math.max(maxQuantityValue, 20); 
 
     const numPointsGraph = 50; // Puntos para una curva suave en la gráfica
     const stepGraph = (maxQuantityValue - minQuantityValue) / numPointsGraph;
@@ -273,22 +300,36 @@ const App = () => {
             price_oferta_shifted: p_supply_shifted,
         });
 
-        // Añadir cantidades para la tabla con un paso más amigable o si son números enteros/redondos
-        // Añadir solo enteros o números con pocos decimales que sean "redondos"
-        if (q % 5 === 0 || Math.abs(q - Math.round(q)) < EPSILON * 10) {
+        // Actualizar el rango de precios para el eje Y
+        if (p_demand_original !== null && isFinite(p_demand_original)) {
+            maxPriceValue = Math.max(maxPriceValue, p_demand_original);
+            minPriceValue = Math.min(minPriceValue, p_demand_original);
+        }
+        if (p_supply_original !== null && isFinite(p_supply_original)) {
+            maxPriceValue = Math.max(maxPriceValue, p_supply_original);
+            minPriceValue = Math.min(minPriceValue, p_supply_original);
+        }
+        if (p_demand_shifted !== null && isFinite(p_demand_shifted)) {
+            maxPriceValue = Math.max(maxPriceValue, p_demand_shifted);
+            minPriceValue = Math.min(minPriceValue, p_demand_shifted);
+        }
+        if (p_supply_shifted !== null && isFinite(p_supply_shifted)) {
+            maxPriceValue = Math.max(maxPriceValue, p_supply_shifted);
+            minPriceValue = Math.min(minPriceValue, p_supply_shifted);
+        }
+
+
+        if (q % 5 === 0 || Math.abs(q - Math.round(q)) < EPSILON * 10) { 
              rawTableQuantities.add(Math.round(q)); // Redondear a entero para estas cantidades
         }
     }
 
-    // Asegurarse de que las cantidades de equilibrio estén en la tabla con su precisión original
     if (localQEInitial !== null) rawTableQuantities.add(localQEInitial);
     if (localQEShifted !== null) rawTableQuantities.add(localQEShifted);
 
-    // Convertir el Set a un array y ordenar
     const sortedTableQuantities = Array.from(rawTableQuantities).sort((a, b) => a - b);
 
     const tableDataPoints = sortedTableQuantities.map(q => {
-        // Recalcular precios para las cantidades exactas de la tabla
         const p_demand_original = (parsedDemand.slope !== 0 && (q - parsedDemand.intercept) / parsedDemand.slope >= 0) ? (q - parsedDemand.intercept) / parsedDemand.slope : null;
         const p_supply_original = (parsedSupply.slope !== 0 && (q - parsedSupply.intercept) / parsedSupply.slope >= 0) ? (q - parsedSupply.intercept) / parsedSupply.slope : null;
         const p_demand_shifted = (parsedDemand.slope !== 0 && (q - bD_shifted) / parsedDemand.slope >= 0) ? (q - bD_shifted) / parsedDemand.slope : null;
@@ -341,6 +382,15 @@ const App = () => {
         });
     }
     setEquilibriumDots(localEquilibriumDots); 
+
+    // Definir los dominios de los ejes X e Y
+    // Asegurar que el dominio mínimo sea 0 o un poco menos si hay valores negativos relevantes
+    const newXAxisDomain = [Math.max(0, minQuantityValue - (maxQuantityValue * 0.05)), Math.max(maxQuantityValue * 1.1, 20)];
+    const newYAxisDomain = [Math.max(0, minPriceValue - (maxPriceValue * 0.05)), Math.max(maxPriceValue * 1.2, 10)];
+
+    // Actualizar los estados de dominio de los ejes
+    setXAxisDomain(newXAxisDomain);
+    setYAxisDomain(newYAxisDomain);
 
 
     setGraphData(graphDataPoints);
@@ -417,7 +467,7 @@ const App = () => {
         const payload = {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
         };
-        const apiKey = ""; // Canvas proporcionará esta clave automáticamente
+        const apiKey = "TU_CLAVE_API_AQUI"; // Tu clave API de Gemini
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
@@ -446,7 +496,7 @@ const App = () => {
   }, [demandEq, supplyEq, initialEquilibrium, shiftedEquilibrium, demandShift, supplyShift, error, loadingExplanation]); // Añadido loadingExplanation a las dependencias para evitar llamadas múltiples
 
 
-  // El useEffect solo se dispara cuando calculateEquilibrium cambia (lo cual solo ocurre si sus dependencias cambian)
+  // El useEffect solo se dispara cuando calculateEquilibrio cambia (lo cual solo ocurre si sus dependencias cambian)
   useEffect(() => {
     calculateEquilibrium();
   }, [calculateEquilibrium]);
@@ -642,24 +692,17 @@ const App = () => {
                     dataKey="quantity" // Eje X ahora es Cantidad
                     label={{ value: 'Cantidad (Q)', position: 'insideBottomRight', offset: 0 }}
                     type="number"
-                    domain={[0, 'auto']}
+                    domain={[xAxisDomain[0], xAxisDomain[1]]} // Usar el dominio calculado
                     allowDataOverflow={true}
                   />
                   <YAxis
                     label={{ value: 'Precio (P)', angle: -90, position: 'insideLeft' }}
                     type="number"
-                    domain={[0, 'auto']}
+                    domain={[yAxisDomain[0], yAxisDomain[1]]} // Usar el dominio calculado
                     allowDataOverflow={true}
                   />
-                  <Tooltip formatter={(value, name, props) => {
-                      // Formatear el tooltip para mostrar el nombre correcto del eje
-                      if (props.payload && props.payload.isEquilibriumPoint) {
-                          // Para los puntos de equilibrio, el valor es el precio y la cantidad es el dataKey del Scatter
-                          return [`P: ${value.toFixed(2)}`, `Q: ${props.payload.quantity.toFixed(2)}`, props.payload.label];
-                      }
-                      // Asegurarse de que el valor no sea null antes de toFixed
-                      return [`Precio: ${value !== null ? value.toFixed(2) : 'N/A'}`, name];
-                  }} />
+                  {/* Tooltip con cursor y animación deshabilitada */}
+                  {/* El Tooltip global se ha eliminado para que solo los puntos de equilibrio tengan tooltip al hacer clic */}
                   <Legend />
                   <Line type="monotone" dataKey="price_demanda_original" stroke="#63C2FF" name="Demanda Original" dot={false} /> {/* Color Demanda Original */}
                   <Line type="monotone" dataKey="price_oferta_original" stroke="#D52331" name="Oferta Original" dot={false} /> {/* Color Oferta Original */}
@@ -675,7 +718,7 @@ const App = () => {
                       data={equilibriumDots}
                       x="quantity" // Mapear 'quantity' a la posición X
                       y="price"    // Mapear 'price' a la posición Y
-                      name="Puntos de Equilibrio" // Nombre para la leyenda
+                      // name="Puntos de Equilibrio" // Eliminado para que no aparezca en la leyenda
                       shape={<CustomEquilibriumDot />} // Usar el componente de punto personalizado
                     />
                   )}
