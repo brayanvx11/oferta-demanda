@@ -467,7 +467,7 @@ const App = () => {
         const payload = {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
         };
-        const apiKey = "TU_CLAVE_API_AQUI"; // Tu clave API de Gemini
+        const apiKey = "AIzaSyAkjSZrsv07GmbnPy_QTwyyKIYqbkZGqpE"; // Tu clave API de Gemini
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
         const response = await fetch(apiUrl, {
